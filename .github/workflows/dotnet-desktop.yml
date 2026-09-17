@@ -101,7 +101,7 @@ jobs:
         dotnet publish -c Release -p:PublishProfile=FolderProfile.pubxml
 
     - name: Build AIP
-      uses: caphyon/advinst-github-action@v2.0
+      uses: caphyon/advinst-github-action@v2.0.2
       with:
         advinst-version: '23.3'
         advinst-enable-automation: 'true'
