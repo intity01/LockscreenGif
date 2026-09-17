@@ -73,7 +73,7 @@ LockscreenGif.sln
 | Phase | เป้าหมาย | สถานะ |
 | --- | --- | --- |
 | **1. Architecture** | ย้าย logic → ViewModel/testable Core, static service → DI interface, เพิ่ม test project + unit tests | ✅ **เสร็จเท่าที่ทำได้อย่างมีเหตุผล** (ดูข้อจำกัดด้านล่าง) — ย้าย backup/restore ไปเป็นงาน Phase 3 เพราะเป็นฟีเจอร์ ไม่ใช่งาน architecture |
-| **2. CI/CD** | รัน unit test ใน GitHub Actions ก่อน publish, versioning สม่ำเสมอ, code analyzer/format check | 🟡 **กำลังทำ** (ดูด้านล่าง) |
+| **2. CI/CD** | รัน unit test ใน GitHub Actions ก่อน publish, versioning สม่ำเสมอ, code analyzer/format check | 🟡 **กำลังทำ** — ✅ ยืนยันผ่าน CI จริงแล้ว (build+test+publish+installer สำเร็จครบ pipeline, run #3) |
 | **3. Features** | เลือกทำ 2-3 ไอเดียจาก backlog ด้านบน (แนะนำเริ่ม: **backup/restore lockscreen เดิม**, live preview, settings page) | ⬜ ยังไม่เริ่ม |
 | **4. Exploratory** | แยก Core/Infrastructure เป็นหลาย project เต็มรูปแบบ, ประเมิน/ทำ spike ย้าย UI → Avalonia+FluentAvalonia, ออกแบบ Custom Window Skin System, พิจารณา rename/rebrand | ⬜ รอ Phase 1 |
 
@@ -97,11 +97,12 @@ LockscreenGif.sln
 
 ย้าย "backup/restore lockscreen เดิม" ไปอยู่ใน backlog ของ **Phase 3** แทน (เดิมจัดไว้ใน Phase 1 โดยไม่ถูกต้อง — เป็นฟีเจอร์ใหม่ให้ผู้ใช้ ไม่ใช่งานปรับ architecture ของโค้ดที่มีอยู่แล้ว)
 
-> หมายเหตุ: โปรเจกต์ `Core`/`Tests` ตั้ง `TargetFramework=net8.0` (LTS, ไม่มี Windows-specific dependency) แม้แอปหลักจะเป็น `net9.0-windows10.0.26100.0` — อ้างอิงข้ามแบบนี้ปลอดภัย (แอป net9.0 อ้างอิง library net8.0 ได้ปกติ) และทำให้ `Core` ทดสอบ/รันได้แม้ในเครื่องที่ไม่มี net9.0 runtime ติดตั้งแบบเต็ม
+> หมายเหตุ: โปรเจกต์ `Core`/`Tests` ตั้ง `TargetFramework=net8.0` (LTS, ไม่มี Windows-specific dependency) แม้แอปหลักจะเป็น `net9.0-windows10.0.26100.0` — อ้างอิงข้ามแบบนี้ปลอดภัย (แอป net9.0 อ้างอิง library net8.0 ได้ปกติ) และทำให้ `Core` ทดสอบ/รันได้แม้ในเครื่องที่ไม่มี net9.0 runtime ติดตั้งแบบเต็มไ
 
 ### Phase 2 — ความคืบหน้า
 
 - [x] เพิ่ม step รัน `dotnet test` (โปรเจกต์ `Core.Tests`) ใน `.github/workflows/dotnet-desktop.yml` ก่อนขั้นตอน publish — build จะ fail ทันทีถ้ามีเทสต์พัง
 - [x] ติดตั้ง .NET SDK ทั้ง `8.0.x` (สำหรับ `Core`/`Core.Tests`) และ `9.0.x` (สำหรับแอป WinUI3) ใน CI แทนที่จะมีแค่ `9.0.x`
 - [x] แก้ความไม่สอดคล้องของ versioning: `Package.appxmanifest` เคยถูกตั้ง `Major.Minor` เป็น `0.x` ขณะที่ตัวติดตั้ง (Advanced Installer) ใช้ `2.1.x` — อัปเดตให้ทั้งสองจุดใช้ `2.1.x` ตรงกันแล้ว
+- [x] **ยืนยันผ่าน CI จริง** (run #35211822152): unit tests 27/27 ผ่าน, publish สำเร็จ, `Build AIP` สำเร็จ (หลัง bump `caphyon/advinst-github-action` เป็น `v2.0.2` แก้ `Parse config ini file error` จากบั๊กของ `v2.0`), artifact อัปโหลดสำเร็จทั้ง unpackaged app และ `.msi`
 - [ ] Code analyzer/format check (`dotnet format --verify-no-changes` หรือเทียบเท่า) — **ยังไม่ทำโดยตั้งใจ**: โค้ดเดิมยังไม่เคยผ่าน formatter มาก่อน การเปิด gate นี้ทันทีจะทำให้ CI แดงแดงทันทีโดยไม่เกี่ยวกับการเปลี่ยนแปลงครั้งนี้ ต้องรัน `dotnet format` ทั้งโค้ดก่อน (diff กว้างไม่เกี่ยวข้อง) — เสนอให้ทำเป็น PR แยกต่างหากต้องการจริง
