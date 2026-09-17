@@ -96,19 +96,11 @@ public sealed class CustomRangeSelector : RangeSelector
 
     #region tooltip helpers --------------------------------------------------------------------
 
-    private static string ToMinSec(double seconds)
-    {
-        //  m = minutes (no leading 0 beyond the first digit)
-        // ss = seconds 00-59 with leading zero
-        // .f = tenths
-        return TimeSpan.FromSeconds(seconds).ToString(@"m\:ss\.f");
-    }
-
     private void UpdateToolTip(double start, double end)
     {
         if (_toolTipText is not null)
         {
-            _toolTipText.Text = $"{ToMinSec(start)} – {ToMinSec(end)}";
+            _toolTipText.Text = $"{LockscreenGif.Core.TimeFormat.ToShortMinutesSeconds(start)} – {LockscreenGif.Core.TimeFormat.ToShortMinutesSeconds(end)}";
         }
     }
 

@@ -1,15 +1,15 @@
-﻿using System.Reflection;
-using FFMpegCore;
+﻿using FFMpegCore;
 using FFMpegCore.Enums;
+using LockscreenGif.Contracts.Services;
 
 namespace LockscreenGif.Services;
-public class FfmpegService
+public class FfmpegService : IFfmpegService
 {
-    private static readonly List<string> _tracked = [];
-    private static readonly string _tempRoot = TempDirectoryService.GetAppTempRoot();
+    private readonly List<string> _tracked = [];
+    private readonly string _tempRoot = TempDirectoryService.GetAppTempRoot();
     private const string _prefix = "ffmpeg_temp_";
 
-    public static string CreateTempDirectory()
+    public string CreateTempDirectory()
     {
         var dir = Path.Combine(_tempRoot, $"{_prefix}{Guid.NewGuid()}");
         Directory.CreateDirectory(dir);
@@ -17,7 +17,7 @@ public class FfmpegService
         return dir;
     }
 
-    public static void CleanupTempDirectories()
+    public void CleanupTempDirectories()
     {
         // delete the ones we deliberately created this session
         foreach (var dir in _tracked)
@@ -53,7 +53,7 @@ public class FfmpegService
         }
     }
 
-    public static async Task<string> ApplyFastStartAsync(
+    public async Task<string> ApplyFastStartAsync(
         string inputFile)
     {
         // point to your bundled ffmpeg.exe
@@ -74,7 +74,7 @@ public class FfmpegService
         return outputFile;
     }
 
-    public static async Task<string> TrimVideoAsync(
+    public async Task<string> TrimVideoAsync(
         string inputFile,
         TimeSpan startTime,
         TimeSpan endTime)
@@ -105,7 +105,7 @@ public class FfmpegService
         return outputFile;
     }
 
-    public static async Task<string> ExtractPngFramesAsync(
+    public async Task<string> ExtractPngFramesAsync(
         string videoInput,
         Action<double> onPercentageProgress,
         int width,

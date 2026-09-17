@@ -68,6 +68,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Logger\Logger.csproj" />
+    <ProjectReference Include="..\Core\LockscreenGif.Core.csproj" />
   </ItemGroup>
   
   <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">

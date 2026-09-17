@@ -1,18 +1,14 @@
-﻿using System.Diagnostics;
-using System.Reflection;
-using FFMpegCore;
-using FFMpegCore.Enums;
-using GifskiNet;
-using WindowsDisplayAPI;
+﻿using GifskiNet;
+using LockscreenGif.Contracts.Services;
 
 namespace LockscreenGif.Services;
-public class GifSkiService
+public class GifSkiService : IGifSkiService
 {
-    private static readonly List<string> _tracked = [];
-    private static readonly string _tempRoot = TempDirectoryService.GetAppTempRoot();
+    private readonly List<string> _tracked = [];
+    private readonly string _tempRoot = TempDirectoryService.GetAppTempRoot();
     private const string _prefix = "gifski_temp_";
 
-    public static string CreateTempDirectory()
+    public string CreateTempDirectory()
     {
         var dir = Path.Combine(_tempRoot, $"{_prefix}{Guid.NewGuid()}");
         Directory.CreateDirectory(dir);
@@ -20,7 +16,7 @@ public class GifSkiService
         return dir;
     }
 
-    public static void CleanupTempDirectories()
+    public void CleanupTempDirectories()
     {
         // delete the ones we deliberately created this session
         foreach (var dir in _tracked)
@@ -56,7 +52,7 @@ public class GifSkiService
         }
     }
 
-    public static async Task<string> CreateGif(
+    public async Task<string> CreateGif(
         string inputDirectory,
         Action<double> onPercentageProgress,
         double frameRate)

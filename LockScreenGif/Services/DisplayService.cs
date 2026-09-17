@@ -1,9 +1,10 @@
-﻿using WindowsDisplayAPI;
+﻿using LockscreenGif.Contracts.Services;
+using WindowsDisplayAPI;
 
 namespace LockscreenGif.Services;
-public class DisplayService
+public class DisplayService : IDisplayService
 {
-    public static IEnumerable<string> GetDisplayResolutions()
+    public IEnumerable<string> GetDisplayResolutions()
     {
         return Display.GetDisplays().Select(GetResolution).Distinct();
     }

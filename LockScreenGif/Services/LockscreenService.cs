@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using LockscreenGif.Contracts.Services;
+using LockscreenGif.Core;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.Win32;
 using Windows.Storage;
@@ -19,13 +20,19 @@ public class DeleteFilesResult
 public sealed class LockscreenService : ILockscreenService
 {
     private const string LockscreenRoot = @"C:\ProgramData\Microsoft\Windows\SystemData";
-    private const string DimmedSuffix = "_notdimmed.jpg";
     private const string DimmedPattern = "*_notdimmed.jpg";
-    private const string DimmedBaseName = "LockScreen.jpg";
+    private const string DimmedBaseName = LockscreenDimmedFileNaming.DimmedBaseName;
+
+    private readonly IDisplayService _displayService;
 
     private readonly SecurityIdentifier _sid =
         WindowsIdentity.GetCurrent().User
         ?? throw new InvalidOperationException("Unable to obtain user SID.");
+
+    public LockscreenService(IDisplayService displayService)
+    {
+        _displayService = displayService;
+    }
 
     public StorageFile? CurrentImage
     {
@@ -219,27 +226,15 @@ public sealed class LockscreenService : ILockscreenService
      *   FILE OPERATIONS
      *----------------------------------------------------------------*/
 
-    private static HashSet<string> GetDimmedDestFileNames(string lockScreenFolderPath)
+    private HashSet<string> GetDimmedDestFileNames(string lockScreenFolderPath)
     {
-        var dests = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // 1) expected per current display resolution list
-        foreach (var res in DisplayService.GetDisplayResolutions())
-        {
-            dests.Add($"LockScreen___{res}{DimmedSuffix}");
-        }
-
-        // 2) any already-existing dimmed variants Windows created (e.g. off-by-one widths)
+        var existingFileNames = new List<string>();
         try
         {
             foreach (var existingPath in Directory.EnumerateFiles(lockScreenFolderPath, DimmedPattern, SearchOption.TopDirectoryOnly))
             {
                 var fileName = Path.GetFileName(existingPath);
-                if (!string.IsNullOrWhiteSpace(fileName) && !dests.Contains(fileName))
-                {
-                    Logger.Info($"Adding non-resolution matching existing dimmed file to files to clobber: {fileName}");
-                    dests.Add(fileName);
-                }
+                existingFileNames.Add(fileName);
             }
         }
         catch (Exception ex)
@@ -247,7 +242,13 @@ public sealed class LockscreenService : ILockscreenService
             Logger.Warn($"Failed to enumerate existing dimmed files in {lockScreenFolderPath}: {ex.Message}");
         }
 
-        return dests;
+        var dests = LockscreenDimmedFileNaming.BuildDimmedFileNames(
+            _displayService.GetDisplayResolutions(),
+            existingFileNames);
+
+        Logger.Info($"Dimmed destination file names for {lockScreenFolderPath}: {string.Join(", ", dests.OrderBy(n => n))}");
+
+        return new HashSet<string>(dests, StringComparer.OrdinalIgnoreCase);
     }
 
     private async Task CreateDimmedFilesAsync(string directory)

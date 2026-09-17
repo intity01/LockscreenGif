@@ -16,3 +16,6 @@ https://github.com/Leapward-Koex/LockscreenGif/assets/30615050/7448e59f-9767-450
 ONLY real .GIF files are supported.
 Videos cannot work and will never work directly, please use the video option to dynamically create a gif to use.
 GIFs created through the video option are created with [FFMPEG](https://www.ffmpeg.org/) and [Gifski](https://gif.ski/) to produce high quality, video like gifs.
+
+# Documentation
+For an in-depth analysis of the codebase (architecture, how the lockscreen trick works, service reference, and a development/build guide), see the [`docs/`](./docs/README.md) folder.

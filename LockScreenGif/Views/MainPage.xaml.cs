@@ -1,7 +1,7 @@
-﻿using System.Globalization;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using CommunityToolkit.WinUI.Controls;
 using LockscreenGif.Contracts.Services;
+using LockscreenGif.Core;
 using LockscreenGif.Helpers;
 using LockscreenGif.Services;
 using LockscreenGif.ViewModels;
@@ -28,6 +28,7 @@ public sealed partial class MainPage : Page
 
     private readonly ILockscreenService _lockscreenService;
     private readonly IAppNotificationService _notificationService;
+    private readonly IFfmpegService _ffmpegService;
 
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _lockscreenModeTimer;
     private LockscreenService.LockScreenMode _lastLockScreenMode = LockscreenService.LockScreenMode.Unknown;
@@ -64,6 +65,7 @@ public sealed partial class MainPage : Page
         ViewModel = App.GetService<MainViewModel>();
         _lockscreenService = App.GetService<ILockscreenService>();
         _notificationService = App.GetService<IAppNotificationService>();
+        _ffmpegService = App.GetService<IFfmpegService>();
         InitializeComponent();
 
         StartLockscreenModePolling();
@@ -161,87 +163,37 @@ public sealed partial class MainPage : Page
         }
     }
 
-    static double RoundToSigFigs(double value, int digits = 2)
-    {
-        if (value == 0)
-        {
-            return 0;
-        }
-
-        var abs = Math.Abs(value);
-        var exponent = (int)Math.Floor(Math.Log10(abs));          // 5329 → 3
-        var scale = Math.Pow(10, exponent - digits + 1);       // 10^(3-2+1)=100
-        return Math.Round(value / scale) * scale;                    // → 5300
-    }
-
     private void UpdateFileSizeWarning()
     {
         var width = (int)((ComboBoxItem)ComboResolution.SelectedItem).Tag;   // e.g. 480, 720, 1080
         var fps = (double?)((ComboBoxItem)ComboFps.SelectedItem).Tag ?? 0;
 
-        //   * assume the source is 16:9            → height = width / 16 * 9
-        //   * assume 24-bit RGB                    → 3 bytes / pixel
-        //   * assume PNG compresses to ~35 %       → factor 0.35 (empirical)
-        var height = (int)Math.Round(width * 9.0 / 16.0);
-        var bytesPerFrame = width * height * 3 /*RGB*/ * 0.35;
-        var kbPerFrame = bytesPerFrame / 1024.0;
-
         var durationSec = _endSec - _startSec;
-        var frameCount = durationSec * fps;
-        var totalMB = frameCount * kbPerFrame / 1024.0;
-
-        var rounded = RoundToSigFigs(totalMB, 2);
-
+        var estimatedMB = GifFileSizeEstimator.EstimateMegabytes(width, fps, durationSec);
 
         FileSizeWarning.Message =
-            $"Generating the GIF may temporarily take up to {rounded} MB of space to generate the GIF. " +
+            $"Generating the GIF may temporarily take up to {estimatedMB} MB of space to generate the GIF. " +
             "Ensure you have enough space free.";
         FileSizeWarning.IsOpen = true;
-        if (totalMB > 5000)
+        FileSizeWarning.Severity = GifFileSizeEstimator.GetSeverity(estimatedMB) switch
         {
-            FileSizeWarning.Severity = InfoBarSeverity.Error;
-        }
-        else if (totalMB > 1000)
-        {
-            FileSizeWarning.Severity = InfoBarSeverity.Warning;
-        }
-        else
-        {
-            FileSizeWarning.Severity = InfoBarSeverity.Informational;
-        }
+            FileSizeSeverity.Error => InfoBarSeverity.Error,
+            FileSizeSeverity.Warning => InfoBarSeverity.Warning,
+            _ => InfoBarSeverity.Informational,
+        };
     }
 
     private async void SetLockscreenButton_click(object sender, RoutedEventArgs e)
     {
         ApplyButton.IsEnabled = false;
-        Logger.Info("Trying to set lockscreen");
-        var success = await _lockscreenService.ApplyGifAsLockscreenAsync();
-        GifSkiService.CleanupTempDirectories();
-        if (success)
-        {
-            _notificationService.Show(string.Format("AppNotificationSuccess".GetLocalized(), AppContext.BaseDirectory));
-        }
-        else
-        {
-            _notificationService.Show(string.Format("AppNotificationFailure".GetLocalized(), AppContext.BaseDirectory));
-        }
+        await ViewModel.ApplyLockscreenAsync();
     }
 
     private async void RemoveAnimatedLockscreenButton_click(object sender, RoutedEventArgs e)
     {
-        Logger.Info("Trying to delete applied animated lockscreen");
-        var result = await _lockscreenService.RemoveAppliedGif();
-        if (result == null)
+        var result = await ViewModel.RemoveLockscreenAsync();
+        if (result.Outcome == RemoveLockscreenOutcome.Succeeded)
         {
-            _notificationService.Show(string.Format("AppNotificationDeleteFailure".GetLocalized(), AppContext.BaseDirectory));
-        }
-        else if (result.FailedDeletions != 0)
-        {
-            _notificationService.Show(string.Format("AppNotificationDeletePartialFailure".GetLocalized(), AppContext.BaseDirectory, result.SuccessfulDeletions, result.FailedDeletions));
-        }
-        else
-        {
-            _notificationService.Show(string.Format("AppNotificationDeleteSuccess".GetLocalized(), AppContext.BaseDirectory));
             var dialog = new ContentDialog
             {
                 Title = "Removal Successful",
@@ -307,26 +259,9 @@ public sealed partial class MainPage : Page
     private void PopulateResolutionList()
     {
         ComboResolution.Items.Clear();
-        ComboResolution.Items.Add(new ComboBoxItem
+        foreach (var option in VideoResolutionOptions.Build(_videoWidth, _videoHeight))
         {
-            Content = $"Original ({_videoHeight}p)",
-            Tag = (int)_videoWidth
-        });
-        if (_videoWidth > 2560)
-        {
-            ComboResolution.Items.Add(new ComboBoxItem { Content = "1440p", Tag = 2560 });
-        }
-        if (_videoWidth > 1920)
-        {
-            ComboResolution.Items.Add(new ComboBoxItem { Content = "1080p", Tag = 1920 });
-        }
-        if (_videoWidth > 1280)
-        {
-            ComboResolution.Items.Add(new ComboBoxItem { Content = "720p", Tag = 1280 });
-        }
-        if (_videoWidth > 854)
-        {
-            ComboResolution.Items.Add(new ComboBoxItem { Content = "480p", Tag = 854 });
+            ComboResolution.Items.Add(new ComboBoxItem { Content = option.Label, Tag = option.Width });
         }
         ComboResolution.SelectedIndex = 0;
     }
@@ -334,26 +269,9 @@ public sealed partial class MainPage : Page
     private void PopulateFpsList()
     {
         ComboFps.Items.Clear();
-        ComboFps.Items.Add(new ComboBoxItem
+        foreach (var option in VideoFpsOptions.Build(_videoFps))
         {
-            Content = $"Original ({_videoFps:F2} fps)",
-            Tag = _videoFps
-        });
-        if (_videoFps > 30)
-        {
-            ComboFps.Items.Add(new ComboBoxItem { Content = "30 fps", Tag = 30.0 });
-        }
-        if (_videoFps > 15)
-        {
-            ComboFps.Items.Add(new ComboBoxItem { Content = "15 fps", Tag = 15.0 });
-        }
-        if (_videoFps > 10)
-        {
-            ComboFps.Items.Add(new ComboBoxItem { Content = "10 fps", Tag = 10.0 });
-        }
-        if (_videoFps > 5)
-        {
-            ComboFps.Items.Add(new ComboBoxItem { Content = "5 fps", Tag = 5.0 });
+            ComboFps.Items.Add(new ComboBoxItem { Content = option.Label, Tag = option.Fps });
         }
         ComboFps.SelectedIndex = 0;
     }
@@ -365,8 +283,7 @@ public sealed partial class MainPage : Page
             sec = Math.Max(0, Math.Min(sec, TrimSelector.Maximum));
             _startSec = sec;
             TrimSelector.RangeStart = _startSec;
-            StartTimeTextBox.Text = TimeSpan.FromSeconds(_startSec)
-                                       .ToString(@"mm\:ss\.f", CultureInfo.InvariantCulture);
+            StartTimeTextBox.Text = TimeFormat.ToPaddedMinutesSeconds(_startSec);
             if (_session?.Position.TotalSeconds < _startSec)
             {
                 Seek(_startSec);
@@ -374,8 +291,7 @@ public sealed partial class MainPage : Page
         }
         else
         {
-            StartTimeTextBox.Text = TimeSpan.FromSeconds(_startSec)
-                                       .ToString(@"mm\:ss\.f", CultureInfo.InvariantCulture);
+            StartTimeTextBox.Text = TimeFormat.ToPaddedMinutesSeconds(_startSec);
         }
         UpdateFileSizeWarning();
 
@@ -388,8 +304,7 @@ public sealed partial class MainPage : Page
             sec = Math.Max(0, Math.Min(sec, TrimSelector.Maximum));
             _endSec = sec;
             TrimSelector.RangeEnd = _endSec;
-            EndTimeTextBox.Text = TimeSpan.FromSeconds(_endSec)
-                                     .ToString(@"mm\:ss\.f", CultureInfo.InvariantCulture);
+            EndTimeTextBox.Text = TimeFormat.ToPaddedMinutesSeconds(_endSec);
             if (_session?.Position.TotalSeconds > _endSec)
             {
                 Seek(_startSec);
@@ -397,8 +312,7 @@ public sealed partial class MainPage : Page
         }
         else
         {
-            EndTimeTextBox.Text = TimeSpan.FromSeconds(_endSec)
-                                     .ToString(@"mm\:ss\.f", CultureInfo.InvariantCulture);
+            EndTimeTextBox.Text = TimeFormat.ToPaddedMinutesSeconds(_endSec);
         }
         UpdateFileSizeWarning();
 
@@ -428,10 +342,8 @@ public sealed partial class MainPage : Page
             _endSec = duration;
 
             // initialize the TextBox values (with .f)
-            StartTimeTextBox.Text = TimeSpan.FromSeconds(0)
-                                       .ToString(@"mm\:ss\.f", CultureInfo.InvariantCulture);
-            EndTimeTextBox.Text = TimeSpan.FromSeconds(duration)
-                                       .ToString(@"mm\:ss\.f", CultureInfo.InvariantCulture);
+            StartTimeTextBox.Text = TimeFormat.ToPaddedMinutesSeconds(0);
+            EndTimeTextBox.Text = TimeFormat.ToPaddedMinutesSeconds(duration);
 
             GenerateButton.IsEnabled = true;
             UpdateFileSizeWarning();
@@ -450,10 +362,8 @@ public sealed partial class MainPage : Page
         }
 
         // update the text inputs in sync
-        StartTimeTextBox.Text = TimeSpan.FromSeconds(_startSec)
-                                   .ToString(@"mm\:ss\.f", CultureInfo.InvariantCulture);
-        EndTimeTextBox.Text = TimeSpan.FromSeconds(_endSec)
-                                   .ToString(@"mm\:ss\.f", CultureInfo.InvariantCulture);
+        StartTimeTextBox.Text = TimeFormat.ToPaddedMinutesSeconds(_startSec);
+        EndTimeTextBox.Text = TimeFormat.ToPaddedMinutesSeconds(_endSec);
         UpdateFileSizeWarning();
 
     }
@@ -503,19 +413,8 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private bool TryParseTime(string text, out double secs)
-    {
-        secs = 0;
-        var parts = text.Split(':');
-        if (parts.Length == 2
-            && int.TryParse(parts[0], out var mins)
-            && double.TryParse(parts[1], NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var s))
-        {
-            secs = mins * 60 + s;
-            return true;
-        }
-        return false;
-    }
+    private static bool TryParseTime(string text, out double secs) =>
+        TimeFormat.TryParseMinutesSeconds(text, out secs);
 
     private async void GenerateButton_Click(object sender, RoutedEventArgs e)
     {
@@ -530,30 +429,22 @@ public sealed partial class MainPage : Page
             GenerateLoading.Value = 0;
             GenerateLoading.IsIndeterminate = true;
             GenerateLoading.Visibility = Visibility.Visible;
-            var trimmedVideo = await FfmpegService.TrimVideoAsync(_videoFile.Path, TimeSpan.FromSeconds(_startSec), TimeSpan.FromSeconds(_endSec));
-            GenerateLoading.IsIndeterminate = false;
-            var ExtractFramesProgress = (double percent) =>
-            {
-                var display = percent * 0.3;
-                DispatcherQueue.TryEnqueue(() =>
-                    GenerateLoading.Value = display
-                );
-            };
-
-            var CreateGifProgress = (double percent) =>
-            {
-                var display = 30 + percent * 0.7;
-                DispatcherQueue.TryEnqueue(() =>
-                    GenerateLoading.Value = display
-                );
-            };
 
             var chosenWidth = (int)((ComboBoxItem)ComboResolution.SelectedItem).Tag;
             var chosenFps = (double)((ComboBoxItem)ComboFps.SelectedItem).Tag;
 
-            var framesDir = await FfmpegService.ExtractPngFramesAsync(trimmedVideo, ExtractFramesProgress, chosenWidth, chosenFps, TimeSpan.FromSeconds(_endSec - _startSec));
-            var gifLocation = await GifSkiService.CreateGif(framesDir, CreateGifProgress, chosenFps);
+            var request = new GifGenerationRequest(
+                _videoFile.Path,
+                TimeSpan.FromSeconds(_startSec),
+                TimeSpan.FromSeconds(_endSec),
+                chosenWidth,
+                chosenFps);
 
+            var gifLocation = await ViewModel.GenerateGifAsync(
+                request,
+                onTrimCompleted: () => GenerateLoading.IsIndeterminate = false,
+                onExtractFramesProgress: percent => DispatcherQueue.TryEnqueue(() => GenerateLoading.Value = percent * 0.3),
+                onCreateGifProgress: percent => DispatcherQueue.TryEnqueue(() => GenerateLoading.Value = 30 + percent * 0.7));
 
             _lockscreenService.CurrentImage = await StorageFile.GetFileFromPathAsync(gifLocation);
             currentImage.Source = _lockscreenService.CurrentImageBitmap!;
@@ -567,7 +458,7 @@ public sealed partial class MainPage : Page
         }
         finally
         {
-            FfmpegService.CleanupTempDirectories();
+            _ffmpegService.CleanupTempDirectories();
             GenerateButton.IsEnabled = true;
         }
 

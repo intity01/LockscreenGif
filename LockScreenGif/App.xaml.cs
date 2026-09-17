@@ -66,6 +66,9 @@ public partial class App : Application
             services.AddSingleton<IPageService, PageService>();
             services.AddSingleton<INavigationService, NavigationService>();
             services.AddSingleton<ILockscreenService, LockscreenService>();
+            services.AddSingleton<IDisplayService, DisplayService>();
+            services.AddSingleton<IFfmpegService, FfmpegService>();
+            services.AddSingleton<IGifSkiService, GifSkiService>();
 
             // Views and ViewModels
             services.AddTransient<MainViewModel>();
@@ -83,8 +86,8 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
 
         Logger.Info($"App starting up. Running on Windows {Environment.OSVersion}, Language {CultureInfo.InstalledUICulture.DisplayName}");
-        FfmpegService.CleanupTempDirectories();
-        GifSkiService.CleanupTempDirectories();
+        App.GetService<IFfmpegService>().CleanupTempDirectories();
+        App.GetService<IGifSkiService>().CleanupTempDirectories();
     }
 
     private void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
